@@ -185,12 +185,13 @@ Response:
 | Component | Technology | Reason |
 |-----------|-----------|--------|
 | Agent orchestration | **CrewAI** | Multi-agent crew with defined roles and task delegation |
-| Tool integrations | **Composio** (`composio_crewai`) | Firecrawl for crawling, Code Interpreter for validation |
-| LLM | **Llama 3.3 70B** (via Together AI / Groq) | Fits hackathon theme; OpenAI GPT-4o as fallback |
-| Monetization | **Skyfire** seller API | Agent-to-agent payments for doc queries |
-| API layer | **FastAPI** | Wraps core engine for Skyfire seller endpoint + programmatic access |
-| Human interface | **Next.js + CLI (Rich)** | Modern dark-theme web UI + terminal interface |
-| Caching | **In-memory dict** | Cache page indexes and fetched pages to avoid re-crawling |
+| Tool integrations | **Composio** (`composio_crewai`) | Native CrewAI tool integration |
+| LLM | **OpenAI GPT-4o** | Powers all agents (navigator, doc analyst, code generator) |
+| Doc indexing | **llms.txt** | Lightweight doc site indexing via the llms.txt standard |
+| API layer | **FastAPI** | Backend API + Skyfire seller endpoint |
+| Frontend | **Next.js + TypeScript + Tailwind** | Modern dark-theme web UI |
+| CLI | **Rich** | Terminal interface for local usage |
+| Caching | **In-memory dict** | Cache page indexes and fetched pages |
 
 ---
 
