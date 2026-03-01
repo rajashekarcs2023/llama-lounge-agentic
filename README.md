@@ -4,26 +4,21 @@
 
 ## Problem Statement
 
-Every developer — especially at hackathons — faces the same painful workflow:
+Coding agents like Claude Code, Cursor, Windsurf, and Copilot write great code but hallucinate APIs. Ask one to "build a CrewAI agent with Composio Slack tools" and it uses method names that don't exist, import paths that changed months ago, and authentication flows it invented. Why? Stale training data, not actual docs.
 
-1. You have a task: *"Build a service that sends emails and accepts payments"*
-2. You need to figure out WHICH tools/APIs to use across multiple platforms
-3. You manually read through docs for Composio, CrewAI, Skyfire, etc.
-4. You copy-paste relevant sections into a file
-5. You feed it to an AI assistant and hope it generates working code
+No existing AI tool can autonomously navigate multiple documentation sources, cross-reference them, and generate verified code.
 
-This is slow, error-prone, and doesn't scale. A platform like Composio alone has 980+ toolkits. No human can know what's available across all these doc sites. And no existing AI tool can autonomously navigate multiple documentation sources to build a solution.
-
-**DocAgent solves this: given a task, it autonomously decides which documentation sources to consult, navigates to the right pages across multiple doc sites, understands the tools/APIs/auth flows, and generates production-ready code — exactly like a senior developer would, but in seconds.**
+**DocAgent is the missing layer between coding agents and documentation.** Given a task, it autonomously indexes doc sites via `llms.txt`, reasons about which pages across multiple sources are relevant, fetches only those pages, generates code using real API patterns, and validates the output in a sandbox. It reads the actual docs so your AI doesn't have to hallucinate.
 
 ## Our Solution
 
 **DocAgent** is a multi-agent system (CrewAI + Composio) that acts like a senior developer who has read all the docs. You give it a task and a set of documentation sources. It:
 
-1. **Indexes** each doc site's structure (table of contents, not full content)
-2. **Reasons** about which docs across which sites are relevant for YOUR task
-3. **Fetches** only the right pages from the right sources
-4. **Generates** complete, tested, runnable code
+1. **Indexes** each doc site via `llms.txt` (lightweight table of contents, not full content)
+2. **Navigates** using an AI agent that reasons across ALL indexed sites to pick relevant pages
+3. **Fetches** only the right pages from the right sources as clean markdown
+4. **Generates** complete, production-ready code using a multi-agent crew
+5. **Validates** the generated code in a Composio sandbox and auto-retries on errors
 
 ### Key Innovation: Agentic Retrieval Across Multiple Sources (Not RAG)
 
@@ -96,16 +91,20 @@ The agent IS the retrieval system. It thinks like a developer: *"For this task I
 │  │  │   platforms connect together                          │  │  │
 │  │  │ → Output: unified tool brief (cross-platform)         │  │  │
 │  │  │                                                       │  │  │
-│  │  │ Agent: Solution Architect                             │  │  │
-│  │  │ → Takes user task + cross-platform tool brief         │  │  │
-│  │  │ → Designs how to wire the pieces together             │  │  │
-│  │  │ → Output: step-by-step implementation plan            │  │  │
-│  │  │                                                       │  │  │
 │  │  │ Agent: Code Generator                                 │  │  │
 │  │  │ → Writes production-ready code combining all tools    │  │  │
-│  │  │ → Uses Composio Code Interpreter to validate          │  │  │
-│  │  │ → Retries on errors (max 2)                           │  │  │
 │  │  │ → Output: complete, runnable script                   │  │  │
+│  │  └────────────────────────┬─────────────────────────────┘  │  │
+│  │                           ▼                                 │  │
+│  │  Phase 5: VALIDATE (sandbox + auto-retry)                   │  │
+│  │  ┌──────────────────────────────────────────────────────┐  │  │
+│  │  │ Code Validator                                        │  │  │
+│  │  │ • Runs code in Composio remote sandbox                │  │  │
+│  │  │ • Checks for syntax, import, and runtime errors       │  │  │
+│  │  │ • If errors found: re-generates with error context    │  │  │
+│  │  │ • Auto-retries up to 2 times                          │  │  │
+│  │  │ • Falls back to local syntax check if sandbox unavail │  │  │
+│  │  │ • Output: validated, runnable code                    │  │  │
 │  │  └──────────────────────────────────────────────────────┘  │  │
 │  └────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────┘
@@ -129,19 +128,19 @@ The agent IS the retrieval system. It thinks like a developer: *"For this task I
 - **Tools:** None (reasoning over fetched page content)
 - **Output:** Structured brief containing: available tools/APIs, authentication method, required parameters, code examples, common pitfalls
 
-### Agent 3: Solution Architect
-- **Role:** Solution Architect
-- **Goal:** Design a clean, minimal implementation plan for the user's task based on the documentation analysis
-- **Backstory:** Architect who designs elegant solutions using the least amount of code and the most appropriate APIs
-- **Tools:** None (pure reasoning)
-- **Output:** Step-by-step implementation plan with specific API calls, imports, and data flow
-
-### Agent 4: Code Generator
+### Agent 3: Code Generator
 - **Role:** Production Code Generator
 - **Goal:** Write complete, runnable Python code that accomplishes the user's task
-- **Backstory:** Senior engineer who writes clean, production-ready code with proper error handling, imports, and documentation. Never leaves placeholder code — every script must run.
-- **Tools:** Composio Code Interpreter (to validate the generated code actually executes)
+- **Backstory:** Senior engineer who writes clean, production-ready code with proper error handling, imports, and documentation. Never leaves placeholder code.
+- **Tools:** None (uses Doc Analyst brief as context)
 - **Output:** Complete Python script ready to copy-paste and run
+
+### Agent 4: Code Validator
+- **Role:** Code Validator
+- **Goal:** Run generated code in a Composio remote sandbox to verify it has no syntax, import, or runtime errors
+- **Backstory:** QA engineer who validates Python scripts before deployment
+- **Tools:** Composio Remote Bash Tool (sandbox execution)
+- **Output:** Validation result (VALID or ERROR with details). If invalid, triggers auto-retry with error context
 
 ---
 
@@ -149,8 +148,8 @@ The agent IS the retrieval system. It thinks like a developer: *"For this task I
 
 | Component | Composio Toolkit | Purpose |
 |-----------|-----------------|---------|
-| Doc crawling | **Firecrawl** | Crawl sitemap, fetch individual pages as clean markdown |
-| Code validation | **Code Interpreter** | Run generated code in sandbox to verify it works |
+| Doc indexing | **llms.txt** | Index doc sites via the llms.txt standard for LLM consumption |
+| Code validation | **Remote Bash Tool** | Run generated code in Composio sandbox to verify it works |
 | Output delivery | **GitHub** (optional) | Push generated code to user's repo |
 | Agent framework | **`composio_crewai`** | Native CrewAI tool integration |
 
@@ -190,7 +189,7 @@ Response:
 | LLM | **Llama 3.3 70B** (via Together AI / Groq) | Fits hackathon theme; OpenAI GPT-4o as fallback |
 | Monetization | **Skyfire** seller API | Agent-to-agent payments for doc queries |
 | API layer | **FastAPI** | Wraps core engine for Skyfire seller endpoint + programmatic access |
-| Human interface | **CLI (Rich)** | Clean terminal UI for demo — no Streamlit |
+| Human interface | **Next.js + CLI (Rich)** | Modern dark-theme web UI + terminal interface |
 | Caching | **In-memory dict** | Cache page indexes and fetched pages to avoid re-crawling |
 
 ---
@@ -209,10 +208,15 @@ llama-lounge-agentic/
 │   ├── __init__.py
 │   ├── indexer.py           # Multi-site sitemap indexer (Firecrawl via Composio)
 │   ├── navigator.py         # Navigator agent (cross-source page selection)
-│   ├── crew.py              # Code generation crew (Doc Analyst + Architect + Generator)
-│   ├── engine.py            # Core engine (orchestrates index → navigate → fetch → generate)
+│   ├── crew.py              # Code generation crew (Doc Analyst + Code Generator)
+│   ├── validator.py         # Code validator (Composio sandbox + auto-retry loop)
+│   ├── engine.py            # Core engine (orchestrates index → navigate → fetch → generate → validate)
 │   └── cache.py             # In-memory cache for indexes and fetched pages
-└── config/
-    ├── __init__.py
-    └── settings.py          # Configuration and environment variables
+├── config/
+│   ├── __init__.py
+│   └── settings.py          # Configuration and environment variables
+└── frontend/                # Next.js + TypeScript web UI
+    ├── app/page.tsx          # Main DocAgent interface
+    ├── next.config.ts        # API proxy to FastAPI backend
+    └── package.json
 ```
