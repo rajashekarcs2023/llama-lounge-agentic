@@ -1,0 +1,9 @@
+crewai>=1.9.0
+composio>=1.0.0rc2
+composio-crewai
+openai>=1.0.0
+requests>=2.31.0
+rich>=13.0.0
+python-dotenv>=1.0.0
+fastapi>=0.100.0
+uvicorn>=0.20.0
