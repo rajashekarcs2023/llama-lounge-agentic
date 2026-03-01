@@ -1,59 +1,103 @@
-"""Code Validator — validates generated code for correctness.
+"""Code Validator — two-level validation for generated code.
 
-Uses local syntax/structure checks (fast, reliable) and optionally
-Composio's remote sandbox for deeper validation.
+Level 1: Local AST checks (syntax, structure, placeholders, completeness)
+Level 2: Daytona sandbox (install packages + verify imports resolve)
 """
 
 import ast
+import os
 import re
 from config.settings import MAX_CODE_RETRIES
 
 
-def validate_code(code: str) -> dict:
-    """Validate generated Python code for syntax and structural correctness.
+def _extract_import_lines(code: str) -> str:
+    """Extract just the import statements from code for sandbox testing."""
+    lines = []
+    for line in code.split('\n'):
+        stripped = line.strip()
+        if stripped.startswith('import ') or stripped.startswith('from '):
+            lines.append(stripped)
+    return '\n'.join(lines)
 
-    Checks:
-    1. Syntax — can Python parse this?
-    2. Structure — has imports, has a main block, no placeholder TODOs
-    3. Completeness — no empty functions, no '...' or 'pass' as sole body
+
+def _daytona_validate(code: str) -> dict:
+    """Run import validation in a Daytona sandbox.
+    
+    Safe: only runs import lines, no API keys, sandbox is deleted after.
+    Graceful: if Daytona unavailable, skips silently.
+    """
+    try:
+        from daytona import Daytona, DaytonaConfig
+
+        api_key = os.getenv("DAYTONA_API_KEY")
+        if not api_key:
+            return {"valid": True, "error": "", "output": "Daytona: skipped (no API key)"}
+
+        config = DaytonaConfig(api_key=api_key)
+        daytona = Daytona(config)
+        sandbox = daytona.create()
+
+        try:
+            # Install packages the generated code likely needs
+            sandbox.process.code_run(
+                'import subprocess; subprocess.run(["pip", "install", "-q", '
+                '"crewai", "composio", "composio-crewai", "python-dotenv", "requests"], '
+                'capture_output=True)'
+            )
+
+            # Only test imports — never run the full code (no API keys in sandbox)
+            import_lines = _extract_import_lines(code)
+            if not import_lines:
+                return {"valid": True, "error": "", "output": "Daytona: no imports to verify"}
+
+            result = sandbox.process.code_run(import_lines)
+            if result.exit_code != 0:
+                # Extract just the error type from the traceback
+                error_msg = result.result.strip().split('\n')[-1] if result.result else "Unknown import error"
+                return {
+                    "valid": False,
+                    "error": f"Sandbox import error: {error_msg[:150]}",
+                    "output": "",
+                }
+
+            return {"valid": True, "error": "", "output": "Daytona sandbox: all imports verified"}
+        finally:
+            sandbox.delete()
+
+    except Exception as e:
+        # Never break the pipeline — just skip sandbox validation
+        return {"valid": True, "error": "", "output": f"Daytona: skipped ({str(e)[:60]})"}
+
+
+def validate_code(code: str) -> dict:
+    """Two-level validation: local AST + Daytona sandbox import check.
 
     Args:
         code: The Python code to validate
 
     Returns:
-        dict with keys:
-            - valid: bool
-            - error: str — error message if invalid
-            - output: str — details if valid
+        dict with keys: valid, error, output
     """
-    # 1. Syntax check
+    # Level 1: Local AST checks (instant)
     try:
         tree = ast.parse(code)
     except SyntaxError as e:
         return {"valid": False, "error": f"SyntaxError at line {e.lineno}: {e.msg}", "output": ""}
 
-    # 2. Must have at least one import
     imports = [n for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom))]
     if not imports:
-        return {"valid": False, "error": "No import statements found. Code must import required libraries.", "output": ""}
+        return {"valid": False, "error": "No import statements found.", "output": ""}
 
-    # 3. Check for placeholder patterns
     placeholder_patterns = [
-        r'your[_\s]?api[_\s]?key',
-        r'TODO',
-        r'FIXME',
-        r'placeholder',
-        r'insert[_\s]?here',
+        r'your[_\s]?api[_\s]?key', r'TODO', r'FIXME', r'placeholder', r'insert[_\s]?here',
     ]
     for pattern in placeholder_patterns:
         match = re.search(pattern, code, re.IGNORECASE)
         if match:
-            # Allow placeholder patterns only inside comments or env var defaults
             line_with_match = None
             for line in code.split('\n'):
                 if re.search(pattern, line, re.IGNORECASE):
                     stripped = line.strip()
-                    # Skip if it's in a comment, string for env var, or raise/error message
                     if stripped.startswith('#') or 'getenv' in line or 'environ' in line or 'raise' in line or 'error' in line.lower():
                         continue
                     line_with_match = stripped
@@ -61,7 +105,6 @@ def validate_code(code: str) -> dict:
             if line_with_match:
                 return {"valid": False, "error": f"Placeholder found: '{match.group()}' in: {line_with_match[:80]}", "output": ""}
 
-    # 4. Check for empty function bodies (just 'pass' or '...')
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             if len(node.body) == 1:
@@ -71,18 +114,18 @@ def validate_code(code: str) -> dict:
                 if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant) and stmt.value.value is ...:
                     return {"valid": False, "error": f"Empty function '{node.name}' with only '...'", "output": ""}
 
-    # 5. Count actual code lines (non-empty, non-comment)
     code_lines = [l for l in code.strip().split('\n') if l.strip() and not l.strip().startswith('#')]
     if len(code_lines) < 5:
-        return {"valid": False, "error": f"Code too short ({len(code_lines)} lines). Expected a complete implementation.", "output": ""}
+        return {"valid": False, "error": f"Code too short ({len(code_lines)} lines).", "output": ""}
 
-    checks_passed = [
-        f"Syntax: OK",
-        f"Imports: {len(imports)} found",
-        f"Structure: {len(code_lines)} code lines",
-        f"No placeholders detected",
-    ]
-    return {"valid": True, "error": "", "output": "; ".join(checks_passed)}
+    local_output = f"AST: OK; Imports: {len(imports)}; Lines: {len(code_lines)}; No placeholders"
+
+    # Level 2: Daytona sandbox import verification
+    sandbox_result = _daytona_validate(code)
+    if not sandbox_result["valid"]:
+        return {"valid": False, "error": sandbox_result["error"], "output": local_output}
+
+    return {"valid": True, "error": "", "output": f"{local_output}; {sandbox_result['output']}"}
 
 
 def validate_and_fix(

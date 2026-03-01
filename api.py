@@ -65,6 +65,19 @@ async def api_status():
     return {"stats": stats, "sources": sources}
 
 
+@app.get("/api/pages")
+async def api_pages():
+    """Return all indexed pages grouped by site — for demo/inspection."""
+    indexes = cache.get_all_indexes()
+    result = {}
+    for site, pages in indexes.items():
+        result[site] = [
+            {"title": p["title"], "url": p["url"], "section": p.get("section", "")}
+            for p in pages
+        ]
+    return {"sites": result, "total": sum(len(p) for p in result.values())}
+
+
 @app.post("/api/generate")
 async def api_generate(request: Request):
     """Full pipeline: navigate docs + generate code for a task.

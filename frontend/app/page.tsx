@@ -130,7 +130,7 @@ export default function Home() {
     navigating: "Navigator Agent is reasoning across all doc sites...",
     fetching: "Fetching selected documentation pages...",
     generating: "Code Crew is analyzing docs & writing code...",
-    validating: "Validating code in Composio sandbox...",
+    validating: "Validating code in Daytona sandbox...",
     done: "Code generated and validated!",
   };
 
@@ -211,6 +211,7 @@ export default function Home() {
                 {[
                   { label: "Composio", url: "https://docs.composio.dev" },
                   { label: "CrewAI", url: "https://docs.crewai.com" },
+                  { label: "Skyfire", url: "https://docs.skyfire.xyz" },
                 ].map((s) => (
                   <button
                     key={s.url}
@@ -242,9 +243,19 @@ export default function Home() {
                           {s.site.replace("https://", "")}
                         </span>
                       </div>
-                      <span className="text-xs text-zinc-500">
-                        {s.pages} pages
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-zinc-500">
+                          {s.pages} pages
+                        </span>
+                        <a
+                          href={`${API}/api/pages`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-cyan-500 hover:text-cyan-400 transition-colors"
+                        >
+                          View Index
+                        </a>
+                      </div>
                     </div>
                   ))
                 )}
@@ -387,6 +398,7 @@ export default function Home() {
                         {url
                           .replace("https://docs.composio.dev/", "composio/")
                           .replace("https://docs.crewai.com/en/", "crewai/")
+                          .replace("https://docs.skyfire.xyz/", "skyfire/")
                           .replace(".md", "")}
                       </a>
                     ))}
