@@ -18,7 +18,7 @@ No existing AI tool can autonomously navigate multiple documentation sources, cr
 2. **Navigates** using an AI agent that reasons across ALL indexed sites to pick relevant pages
 3. **Fetches** only the right pages from the right sources as clean markdown
 4. **Generates** complete, production-ready code using a multi-agent crew
-5. **Validates** the generated code in a Composio sandbox and auto-retries on errors
+5. **Validates** the generated code via local AST checks + Daytona sandbox import verification, auto-retries on errors
 
 ### Key Innovation: Agentic Retrieval Across Multiple Sources (Not RAG)
 
@@ -98,12 +98,14 @@ The agent IS the retrieval system. It thinks like a developer: *"For this task I
 │  │                           ▼                                 │  │
 │  │  Phase 5: VALIDATE (sandbox + auto-retry)                   │  │
 │  │  ┌──────────────────────────────────────────────────────┐  │  │
-│  │  │ Code Validator                                        │  │  │
-│  │  │ • Runs code in Composio remote sandbox                │  │  │
-│  │  │ • Checks for syntax, import, and runtime errors       │  │  │
+│  │  │ Code Validator (two-level)                             │  │  │
+│  │  │ • Level 1: Local AST checks (syntax, structure,       │  │  │
+│  │  │   placeholders, empty functions, completeness)        │  │  │
+│  │  │ • Level 2: Daytona sandbox — installs packages,       │  │  │
+│  │  │   verifies all imports resolve (catches hallucinated  │  │  │
+│  │  │   import paths)                                       │  │  │
 │  │  │ • If errors found: re-generates with error context    │  │  │
 │  │  │ • Auto-retries up to 2 times                          │  │  │
-│  │  │ • Falls back to local syntax check if sandbox unavail │  │  │
 │  │  │ • Output: validated, runnable code                    │  │  │
 │  │  └──────────────────────────────────────────────────────┘  │  │
 │  └────────────────────────────────────────────────────────────┘  │
@@ -136,10 +138,12 @@ The agent IS the retrieval system. It thinks like a developer: *"For this task I
 - **Output:** Complete Python script ready to copy-paste and run
 
 ### Agent 4: Code Validator
-- **Role:** Code Validator
-- **Goal:** Run generated code in a Composio remote sandbox to verify it has no syntax, import, or runtime errors
+- **Role:** Code Validator (two-level)
+- **Goal:** Verify generated code has no syntax or import errors using local AST analysis + Daytona sandbox execution
 - **Backstory:** QA engineer who validates Python scripts before deployment
-- **Tools:** Composio Remote Bash Tool (sandbox execution)
+- **Level 1:** Local AST checks — syntax, imports exist, no placeholders, no empty functions, minimum code length
+- **Level 2:** Daytona sandbox — installs packages in isolated environment, runs only import lines to verify they resolve (catches hallucinated import paths like `from composio.tools import SlackTool`)
+- **Safety:** Only import lines run in sandbox (no API keys needed), sandbox deleted after each check, graceful fallback if Daytona unavailable
 - **Output:** Validation result (VALID or ERROR with details). If invalid, triggers auto-retry with error context
 
 ---
@@ -147,11 +151,23 @@ The agent IS the retrieval system. It thinks like a developer: *"For this task I
 ## Composio Integration Points
 
 | Component | Composio Toolkit | Purpose |
-|-----------|-----------------|---------|
+|-----------|-----------------|--------|
 | Doc indexing | **llms.txt** | Index doc sites via the llms.txt standard for LLM consumption |
-| Code validation | **Remote Bash Tool** | Run generated code in Composio sandbox to verify it works |
 | Output delivery | **GitHub** (optional) | Push generated code to user's repo |
 | Agent framework | **`composio_crewai`** | Native CrewAI tool integration |
+
+---
+
+## Daytona Integration
+
+DocAgent uses **Daytona** for secure sandbox code validation:
+
+| Check | Method | What It Catches |
+|-------|--------|----------------|
+| Syntax & structure | Local AST | Parse errors, missing imports, placeholders, empty functions |
+| Import verification | **Daytona sandbox** | Hallucinated import paths, wrong module names, nonexistent submodules |
+
+The sandbox installs required packages (`crewai`, `composio`, etc.) then runs **only the import lines** — never the full code. No API keys are sent to the sandbox. The sandbox is deleted after each validation.
 
 ---
 
@@ -195,6 +211,7 @@ Response:
 | API layer | **FastAPI** | Backend API + Skyfire seller endpoint |
 | Frontend | **Next.js + TypeScript + Tailwind** | Modern dark-theme web UI |
 | CLI | **Rich** | Terminal interface for local usage |
+| Code validation | **Daytona** | Isolated sandbox for import verification |
 | Caching | **In-memory dict** | Cache page indexes and fetched pages |
 
 ---
@@ -214,7 +231,7 @@ llama-lounge-agentic/
 │   ├── indexer.py           # Multi-site sitemap indexer (Firecrawl via Composio)
 │   ├── navigator.py         # Navigator agent (cross-source page selection)
 │   ├── crew.py              # Code generation crew (Doc Analyst + Code Generator)
-│   ├── validator.py         # Code validator (Composio sandbox + auto-retry loop)
+│   ├── validator.py         # Code validator (AST + Daytona sandbox + auto-retry)
 │   ├── engine.py            # Core engine (orchestrates index → navigate → fetch → generate → validate)
 │   └── cache.py             # In-memory cache for indexes and fetched pages
 ├── config/
