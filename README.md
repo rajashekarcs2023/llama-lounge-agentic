@@ -159,6 +159,8 @@ The agent IS the retrieval system. It thinks like a developer: *"For this task I
 
 DocAgent is deployed as a **Skyfire seller service**, enabling agent-to-agent commerce:
 
+https://app.skyfire.xyz/seller/e3d4c13b-29c1-4927-9a63-c4ac387d7c97/services
+
 ```
 POST /api/generate
 Headers:
