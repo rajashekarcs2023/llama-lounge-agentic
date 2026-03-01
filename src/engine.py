@@ -1,5 +1,5 @@
 """Core engine — orchestrates the full DocAgent pipeline:
-index → navigate → fetch → generate."""
+index → navigate → fetch → generate → validate."""
 
 from rich.console import Console
 from rich.panel import Panel
@@ -8,6 +8,7 @@ from src.cache import cache
 from src.indexer import index_site, fetch_pages
 from src.navigator import navigate
 from src.crew import generate_code
+from src.validator import validate_and_fix
 
 console = Console()
 
@@ -71,15 +72,38 @@ def run_task(task_description: str) -> str:
     console.print(Panel("[bold cyan]Phase 3: Code Crew[/bold cyan] — analyzing docs & generating code"))
     code = generate_code(task_description, doc_contents)
 
-    if code:
-        console.print(Panel(code, title="[bold green]Generated Code[/bold green]", border_style="green"))
+    if not code:
+        console.print("[red]✗ Code generation failed.[/red]")
+        return ""
+
+    # Phase 4: Validate + Retry
+    console.print(Panel("[bold cyan]Phase 4: Validator[/bold cyan] — verifying code in sandbox"))
+    with console.status("[bold blue]Validating generated code..."):
+        final_code, validation_log = validate_and_fix(
+            code, task_description, doc_contents, generate_code
+        )
+
+    for entry in validation_log:
+        if entry["valid"]:
+            console.print(
+                f"  [green]✓[/green] Attempt {entry['attempt']}: "
+                f"[bold green]VALID[/bold green]"
+            )
+        else:
+            console.print(
+                f"  [yellow]⚠[/yellow] Attempt {entry['attempt']}: "
+                f"[red]Error[/red] — {entry['error'][:120]}"
+            )
+
+    if final_code:
+        console.print(Panel(final_code, title="[bold green]Generated Code[/bold green]", border_style="green"))
 
         # Always save to file
         filename = "generated_code.py"
         with open(filename, "w") as f:
-            f.write(code)
+            f.write(final_code)
         console.print(f"\n[green]✓ Code saved to [bold]{filename}[/bold][/green]")
     else:
-        console.print("[red]✗ Code generation failed.[/red]")
+        console.print("[red]✗ Code generation failed after retries.[/red]")
 
-    return code
+    return final_code

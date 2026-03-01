@@ -23,13 +23,20 @@ interface Source {
   sections: string[];
 }
 
+interface ValidationEntry {
+  attempt: number;
+  valid: boolean;
+  error: string;
+}
+
 interface GenerateResult {
   code: string;
   pages_used: string[];
   task: string;
+  validation: ValidationEntry[];
 }
 
-type Phase = "idle" | "navigating" | "fetching" | "generating" | "done";
+type Phase = "idle" | "navigating" | "fetching" | "generating" | "validating" | "done";
 
 export default function Home() {
   const [sources, setSources] = useState<Source[]>([]);
@@ -87,6 +94,8 @@ export default function Home() {
       setPhase("fetching");
       await new Promise((r) => setTimeout(r, 500));
       setPhase("generating");
+      await new Promise((r) => setTimeout(r, 500));
+      setPhase("validating");
 
       const data = await res.json();
       if (data.error) {
@@ -115,7 +124,8 @@ export default function Home() {
     navigating: "Navigator Agent is reasoning across all doc sites...",
     fetching: "Fetching selected documentation pages...",
     generating: "Code Crew is analyzing docs & writing code...",
-    done: "Code generated successfully!",
+    validating: "Validating code in Composio sandbox...",
+    done: "Code generated and validated!",
   };
 
   return (
@@ -303,10 +313,10 @@ export default function Home() {
               {phase !== "idle" && (
                 <div className="px-5 py-3 border-b border-zinc-800">
                   <div className="flex items-center gap-6">
-                    {(["navigating", "fetching", "generating", "done"] as Phase[]).map(
+                    {(["navigating", "fetching", "generating", "validating", "done"] as Phase[]).map(
                       (p, i) => {
                         const isActive =
-                          ["navigating", "fetching", "generating", "done"].indexOf(phase) >= i;
+                          ["navigating", "fetching", "generating", "validating", "done"].indexOf(phase) >= i;
                         const isCurrent = phase === p;
                         return (
                           <div key={p} className="flex items-center gap-2">
@@ -337,7 +347,9 @@ export default function Home() {
                                   ? "Fetch"
                                   : p === "generating"
                                     ? "Generate"
-                                    : "Done"}
+                                    : p === "validating"
+                                      ? "Validate"
+                                      : "Done"}
                             </div>
                           </div>
                         );
@@ -371,6 +383,30 @@ export default function Home() {
                           .replace("https://docs.crewai.com/en/", "crewai/")
                           .replace(".md", "")}
                       </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Validation result */}
+              {result?.validation && result.validation.length > 0 && (
+                <div className="px-5 py-3 border-b border-zinc-800">
+                  <p className="text-xs text-zinc-500 mb-2">
+                    <CheckCircle2 className="w-3 h-3 inline mr-1" />
+                    Validation ({result.validation.length} attempt{result.validation.length > 1 ? "s" : ""}):
+                  </p>
+                  <div className="space-y-1">
+                    {result.validation.map((v) => (
+                      <div key={v.attempt} className="flex items-center gap-2 text-xs">
+                        {v.valid ? (
+                          <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0" />
+                        ) : (
+                          <div className="w-3 h-3 rounded-full bg-red-500/20 border border-red-500 shrink-0" />
+                        )}
+                        <span className={v.valid ? "text-green-400" : "text-red-400"}>
+                          Attempt {v.attempt}: {v.valid ? "Passed" : v.error.slice(0, 80)}
+                        </span>
+                      </div>
                     ))}
                   </div>
                 </div>

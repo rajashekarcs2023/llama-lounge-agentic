@@ -17,6 +17,7 @@ from src.cache import cache
 from src.indexer import index_site, fetch_pages
 from src.navigator import navigate
 from src.crew import generate_code
+from src.validator import validate_and_fix
 
 app = FastAPI(title="DocAgent API", description="The developer that reads ALL the docs.")
 
@@ -101,16 +102,26 @@ async def api_generate(request: Request):
     # Phase 3: Generate code
     code = await loop.run_in_executor(None, generate_code, task, doc_contents)
 
-    # Save to file
+    # Phase 4: Validate + Retry
+    validation_log = []
     if code:
+        final_code, validation_log = await loop.run_in_executor(
+            None, validate_and_fix, code, task, doc_contents, generate_code
+        )
+    else:
+        final_code = ""
+
+    # Save to file
+    if final_code:
         with open("generated_code.py", "w") as f:
-            f.write(code)
+            f.write(final_code)
 
     return {
         "status": "ok",
         "task": task,
         "pages_used": selected_urls,
-        "code": code or "",
+        "code": final_code or "",
+        "validation": validation_log,
     }
 
 
