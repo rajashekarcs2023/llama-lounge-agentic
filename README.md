@@ -161,7 +161,7 @@ DocAgent is deployed as a **Skyfire seller service**, enabling agent-to-agent co
 
 https://app.skyfire.xyz/seller/e3d4c13b-29c1-4927-9a63-c4ac387d7c97/services
 
-Seller ServiceID : 04133e15-9573-490c-915a-adc935145a13
+**SellerServiceID** : 04133e15-9573-490c-915a-adc935145a13
 
 ```
 POST /api/generate
