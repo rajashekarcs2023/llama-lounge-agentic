@@ -38,6 +38,8 @@ interface GenerateResult {
 
 type Phase = "idle" | "navigating" | "fetching" | "generating" | "validating" | "done";
 
+const API = "http://localhost:8000";
+
 export default function Home() {
   const [sources, setSources] = useState<Source[]>([]);
   const [urlInput, setUrlInput] = useState("");
@@ -53,7 +55,7 @@ export default function Home() {
     setIndexing(true);
     setError("");
     try {
-      const res = await fetch("/api/index", {
+      const res = await fetch(`${API}/api/index`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: urlInput.trim() }),
@@ -85,18 +87,22 @@ export default function Home() {
     setPhase("navigating");
 
     try {
-      const res = await fetch("/api/generate", {
+      // Simulate phase transitions while waiting for the long-running API call
+      const phaseTimer = (ms: number, next: Phase) =>
+        new Promise<void>((r) => setTimeout(() => { setPhase(next); r(); }, ms));
+
+      const apiCall = fetch(`${API}/api/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ task: taskInput.trim() }),
       });
 
-      setPhase("fetching");
-      await new Promise((r) => setTimeout(r, 500));
-      setPhase("generating");
-      await new Promise((r) => setTimeout(r, 500));
-      setPhase("validating");
+      // Progress through phases while waiting
+      await phaseTimer(8000, "fetching");
+      await phaseTimer(5000, "generating");
+      await phaseTimer(15000, "validating");
 
+      const res = await apiCall;
       const data = await res.json();
       if (data.error) {
         setError(data.error);
@@ -106,7 +112,7 @@ export default function Home() {
         setPhase("done");
       }
     } catch {
-      setError("Failed to generate. Check backend logs.");
+      setError("Failed to generate. Is the backend running on port 8000?");
       setPhase("idle");
     }
   };
